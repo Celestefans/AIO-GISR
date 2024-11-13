@@ -11,13 +11,14 @@ from tools.evaluation_metric import calc_rmse
 from tools.logger import *
 from skimage.metrics import peak_signal_noise_ratio as PSNR
 from model.Model_AMIR import AMIR
-from model.Ablation.moe_IFM_clip import MOE_IFM_Clip
+# from model.Ablation.moe_IFM_clip import MOE_IFM_Clip
+from model.Ablation.moe_IFM_clip_test import MOE_IFM_Clip_test
 from data.dataset import Pansharpening_mat_Dataset, MRI_pre_dataset, NYU_v2_datset, MultiTaskDataset
 import numpy as np
-os.environ['CUDA_VISIBLE_DEVICES']='6'
+os.environ['CUDA_VISIBLE_DEVICES']='4'
 
 ############ Settings ############
-exp_name = 'MOE_IFM_Clip_7tasks'
+exp_name = 'MOE_IFM_Clip_test_7tasks'
 batch_size = 4
 num_epoch = 500
 lr = 2e-4
@@ -63,7 +64,7 @@ list_val_dataset = [val_depth_dataset_4, val_depth_dataset_8, val_depth_dataset_
 
 
 ############ Model, Optimizer and Scheduler ############
-Generator = MOE_IFM_Clip(dim = 22, num_blocks=[3, 4, 4, 5]).cuda()
+Generator = MOE_IFM_Clip_test(dim = 22, num_blocks=[3, 4, 4, 5]).cuda()
 optimizer_G = torch.optim.Adam(Generator.parameters(), lr=lr, betas=(0.9, 0.999), eps=1e-08)
 lr_scheduler_G = CosineAnnealingLR(optimizer_G, num_epoch, eta_min=1.0e-6)
 l1_loss = L1Loss().cuda()
@@ -100,7 +101,6 @@ def train_one_epoch(epoch, dataloader, model, optimizer, loss_fn, clip_feat):
 
             # 获取对应的clip_feat
             inp_clip = clip_feat[task_to_clip[task_id]]
-
             restored, loss_moe = model(inp_lr, inp_guide, inp_clip)
             
             # 使用L1 loss
@@ -226,24 +226,24 @@ def validate_one_epoch(model, datasets, test_minmax, logger, epoch, clip_feat):
 # 在主循环外部初始化
 
 for epoch in range(1, num_epoch + 1):
-    # mix_dataset.shuffle()
-    # train_dataloader = DataLoader(
-    #     mix_dataset, 
-    #     batch_size=batch_size,
-    #     shuffle=True,
-    #     num_workers=4,
-    #     pin_memory=True,
-    #     persistent_workers=True
-    # )
+    mix_dataset.shuffle()
+    train_dataloader = DataLoader(
+        mix_dataset, 
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True,
+        persistent_workers=True
+    )
     
-    # avg_total_loss, avg_task_losses = train_one_epoch(
-    #     epoch, train_dataloader, Generator, optimizer_G, l1_loss, clip_feat  # 使用L1Loss
-    # )
-    # lr_scheduler_G.step()
+    avg_total_loss, avg_task_losses = train_one_epoch(
+        epoch, train_dataloader, Generator, optimizer_G, l1_loss, clip_feat  # 使用L1Loss
+    )
+    lr_scheduler_G.step()
     
     ## validation
-    # if (epoch < 250 and epoch % 20 == 0) or (epoch > 250 and epoch % 5 == 0):
-    if epoch % 1 == 0 :
+    if (epoch < 250 and epoch % 20 == 0) or (epoch > 250 and epoch % 5 == 0):
+    # if epoch % 1 == 0 :
         metrics, improved = validate_one_epoch(Generator, list_val_dataset, test_minmax, logger, epoch, clip_feat)
         
         # 保存检查点

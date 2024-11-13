@@ -245,7 +245,7 @@ class MRI_pre_dataset(Dataset):
 ########################################################
 ###################### 深度图超分数据集 ###################
 ########################################################
-def arugment(img,gt, hflip=True, rot=True):
+def augment(img,gt, hflip=True, rot=True):
     hflip = hflip and random.random() < 0.5
     vflip = rot and random.random() < 0.5
 
@@ -304,7 +304,7 @@ class NYU_v2_datset(Dataset):
         image = self.images[idx]
         if self.train:
             image, depth = get_patch(img=image, gt=np.expand_dims(depth,2), patch_size=256)
-            image, depth = arugment(img=image, gt=depth)
+            image, depth = augment(img=image, gt=depth)
         h, w = depth.shape[:2]
         s = self.scale
 
