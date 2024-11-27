@@ -2,7 +2,7 @@ import os
 os.environ['CUDA_VISIBLE_DEVICES']='0'  
 from model.Model import Restormer
 from loss.losses import CharbonnierLoss
-from data.dataset import Pansharpening_mat_Dataset, MRI_pre_dataset,Depth_dataset,MultiTaskDataset,MRI_dataset
+from data.dataset import *
 import numpy as np
 import torch
 from torch import nn
@@ -21,13 +21,13 @@ test_name = 'channel_prompt_size_512_Fpsnr'
 save_test_path = os.path.join('./Checkpoint/test_metric','{}.txt'.format(test_name))
 os.makedirs(os.path.dirname(save_test_path), exist_ok=True)
 
-# train
-depth_root = '/data/datasets/NYU/NYUDepthv2'
+depth_NYU_root = '/data/datasets/NYU/NYUDepthv2'
 mri_root = '/data/wtt/WJ_Code_DURE_HF/MRI_dataset/BT'
 pan_root = '/data/datasets/pansharpening/NBU_dataset0730/WV4'
 
-# validation
-val_depth_dataset = Depth_dataset(root=depth_root, split='test', scale=4, downsample='bicubic', augment=True, input_size=256)
+# validation_dataset
+data_transform = transforms.Compose([transforms.ToTensor()])
+val_depth_NYU_dataset = NYU_v2_datset(root_dir=depth_root, scale=8, transform=data_transform, train=False)
 val_mri_dataset = MRI_pre_dataset(os.path.join(mri_root,'t2_test'), os.path.join(mri_root,'T2_test'), os.path.join(mri_root,'T1_test'))
 val_pan_dataset = Pansharpening_mat_Dataset(os.path.join(pan_root,'test'))
 list_val_dataset = [val_pan_dataset, val_depth_dataset, val_mri_dataset]

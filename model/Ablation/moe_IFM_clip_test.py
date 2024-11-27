@@ -278,7 +278,7 @@ class MoE(nn.Module):
         x = rearrange(x, 'b c h w -> (b h w) c') 
         prompt = rearrange(prompt, 'b c h w -> (b h w) c') 
         
-        x_gating = torch.cat((x, prompt), dim=1) #[B, 2C, H, W]
+        x_gating = torch.cat((x, prompt), dim=1) # (B*H*W, 2C)
         
         gates, load = self.noisy_top_k_gating(x_gating, self.training)
         # calculate importance loss

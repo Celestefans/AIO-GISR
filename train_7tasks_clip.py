@@ -18,10 +18,10 @@ import numpy as np
 os.environ['CUDA_VISIBLE_DEVICES']='4'
 
 ############ Settings ############
-exp_name = 'MOE_IFM_Clip_test_7tasks'
+exp_name = 'MOE_IFM_Clip_7tasks_LR4e-4'
 batch_size = 4
 num_epoch = 500
-lr = 2e-4
+lr = 4e-4
 save_dir = os.path.join('./Checkpoint/All-in-one', exp_name)
 os.makedirs(save_dir, exist_ok=True)
 writer = SummaryWriter(log_dir=os.path.join(save_dir, 'tensorboard_logs'))
@@ -263,6 +263,30 @@ for epoch in range(1, num_epoch + 1):
     
     # 在每个epoch结束时清理缓存
     torch.cuda.empty_cache()
-    
+ 
 writer.close()
 
+# Middle_dataset = Middlebury_dataset(root_dir=opt.Middlebury_Path, scale=opt.scale, transform=data_transform)
+# Lu_dataset = Middlebury_dataset(root_dir=opt.Lu_Path, scale=opt.scale, transform=data_transform)
+
+# M_dataloader = torch.utils.data.DataLoader(Middle_dataset, batch_size=1, shuffle=False)
+# L_dataloader = torch.utils.data.DataLoader(Lu_dataset, batch_size=1, shuffle=False)
+
+# # def test(net,dataloader,dataset_name):
+#     net.eval()
+
+#     if dataset_name == "Middlebury":
+#         rmse = np.zeros(30)
+#     elif dataset_name == "Lu":
+#         rmse = np.zeros(6)
+#     with torch.no_grad():
+#         for index, data in enumerate(dataloader):
+#             gt = Variable(data['gt']).type(dtype)
+#             guidance = Variable(data['guidance']).type(dtype)
+#             lr = Variable(data['lr']).type(dtype)
+#             img_predict, _, _ = net(lr, guidance)
+
+#             rmse[index] = midd_calc_rmse(img_predict[0,0], gt[0,0])
+
+
+#     return rmse.mean()

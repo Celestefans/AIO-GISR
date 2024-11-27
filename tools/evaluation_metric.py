@@ -25,6 +25,28 @@ def calculate_psnr(img1, img2):
         return float('inf')
     return 20 * math.log10(255.0 / math.sqrt(mse))
 
+def Fssim(pred, gt, data_range = 1):
+    """ Compute Structural Similarity Index Metric (SSIM). """
+    bs = gt.shape[0]
+    ans = 0
+    for i in range(bs):
+        ans += compare_ssim(gt[i, 0, ...], pred[i, 0, ...], data_range=255.)
+    return ans / bs
+
+def calculate_rmse(img1, img2):
+    # img1 and img2 have range [0, 255]
+    img1 = img1.astype(np.float64)
+    img2 = img2.astype(np.float64)
+    rmse = np.sqrt(np.mean((img1 - img2)**2))
+    return rmse
+
+def Frmse(pred, gt, data_range = 1):
+    """ Compute Normalized Mean Squared Error (NMSE) """
+    bs = gt.shape[0]
+    ans = 0
+    for i in range(bs):  # * std[i]
+        ans += calculate_rmse(gt[i, 0, ...], pred[i, 0, ...])
+    return ans / bs
 def SAM(I1,I2):
     p1 = np.sum(I1*I2,0)
     p2 = np.sum(I1*I1,0)
@@ -78,6 +100,17 @@ def calc_rmse(a, b, minmax):
     b = b * 100
     
     return torch.sqrt(torch.mean(torch.pow(a-b,2)))
+
+def midd_calc_rmse(gt, out):
+    gt = gt[6:-6, 6:-6]
+    out = out[6:-6, 6:-6]
+    gt = gt * 255.0
+    out = out * 255.0
+    
+    return torch.sqrt(torch.mean(torch.pow(gt-out,2)))
+
+
+
 
 if __name__ == "__main__":
     # x, y = torch.rand(2,3,16,16),torch.rand(2,3,16,16)

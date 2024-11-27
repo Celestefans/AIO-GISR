@@ -67,14 +67,15 @@ class Restormer(nn.Module):
     # def forward(self, ms, pan):
     def forward(self, inp_ms, inp_pan):
         _, C1, _, _ = inp_ms.shape
-        _, C2, _, _ = inp_pan.shape
-        inp_ms = F.interpolate(inp_ms, scale_factor = 4, mode = self.upMode)
+        _, C2, H, W = inp_pan.shape
+        inp_ms = F.interpolate(inp_ms, size = (H,W), mode = self.upMode)
+        # inp_tar = F.interpolate(inp_tar, size = (H,W), mode = 'bilinear')
         inp_img = torch.concat([inp_ms, inp_pan],dim=1)
         if C1+C2 == 4:  # depth
             inp_enc_level1 = self.patch_embed1(inp_img)
         elif C1+C2 ==2: # mri
             inp_enc_level1 = self.patch_embed2(inp_img)
-        else:           # pan
+        elif C1+C2 == 5:          # pan
             inp_enc_level1 = self.patch_embed3(inp_img)
 
         out_enc_level1 = self.encoder_level1(inp_enc_level1)
@@ -121,7 +122,7 @@ if __name__== "__main__":
     # gt1,gt2,gt3 = torch.rand(4,1,256,256),torch.rand(4,1,240,240),torch.rand(4,4,128,128)
     # gi1,gi2,gi3 = torch.rand(4,3,256,256),torch.rand(4,1,240,240),torch.rand(4,1,128,128)
 
-    model = Restormer(inp_channels=9, out_channels=8, dim = 22, num_blocks=[3, 4, 4, 6])
+    model = Restormer(inp_channels=9, out_channels=8, dim = 24, num_blocks=[3, 4, 4, 6])
     # model = Restormer(inp_channels=9, out_channels=8, dim = 16, num_blocks=[2, 3, 3, 5])
     # gen1 = model(lr1,gi1)
     # gen2 = model(lr2,gi2)
