@@ -1,14 +1,27 @@
 import logging
+import sys
 
-def get_logger(filename, verbosity=1, name=None):
-    level_dict = {0: logging.DEBUG, 1: logging.INFO, 2: logging.WARNING}
-    formatter = logging.Formatter(
-        "[%(asctime)s][%(filename)s][line:%(lineno)d][%(levelname)s] %(message)s"
-    )
-    logger = logging.getLogger(name)
-    logger.setLevel(level_dict[verbosity])
-
-    fh = logging.FileHandler(filename, "w")
-    fh.setFormatter(formatter)
-    logger.addHandler(fh)
+def get_logger(filename, mode='w'):
+    """
+    Return a logger instance that writes in filename
+    Args:
+        filename: (string) path to log.txt
+        mode: 'w' for overwrite, 'a' for append
+    """
+    logger = logging.getLogger('Logger')
+    logger.setLevel(logging.INFO)
+    
+    # Remove all existing handlers
+    logger.handlers = []
+    
+    # logging to file
+    handler = logging.FileHandler(filename, mode=mode)
+    handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s: %(message)s'))
+    logger.addHandler(handler)
+    
+    # logging to console
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(logging.Formatter('%(message)s'))
+    logger.addHandler(stream_handler)
+    
     return logger

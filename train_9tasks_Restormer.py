@@ -1,4 +1,5 @@
 import os
+import time
 import torch
 from torch import nn
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -23,7 +24,7 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=4, help='batch size')
     parser.add_argument('--num_epoch', type=int, default=500, help='number of epochs')
     parser.add_argument('--lr', type=float, default=2e-4, help='learning rate')
-    parser.add_argument('--gpu', type=str, default='5', help='GPU ID')
+    parser.add_argument('--gpu', type=str, default='7', help='GPU ID')
     parser.add_argument('--depth_root', type=str, default='/data/cjj/dataset/NYU_V2', help='depth dataset root')
     parser.add_argument('--mri_root', type=str, default='/data/wtt/MRI_align/BT', help='MRI dataset root')
     parser.add_argument('--pan_root', type=str, default='/data/datasets/pansharpening/NBU_dataset0730', help='pansharpening dataset root')
@@ -31,39 +32,43 @@ def parse_args():
     return parser.parse_args()
 
 def train_one_epoch(epoch, dataloader, model, optimizer, loss_fn, writer):
-    model.train()
-    epoch_losses = {'total': 0, 'task_losses': [[] for _ in range(9)]}  # 9个任务
-    
-    pbar = tqdm(dataloader, desc=f"Epoch {epoch}")
-    for train_data_lists in pbar:
-        for task_id, data_list in enumerate(train_data_lists):
-            inp_lr, inp_gt, inp_guide = (item.type(torch.FloatTensor).cuda() for item in data_list)
-            
-            optimizer.zero_grad()
-            
-            restored = model(inp_lr, inp_guide)
-            
-            loss_task = loss_fn(restored, inp_gt)
-            loss_G = loss_task
-            
-            loss_G.backward()
-            optimizer.step()
-            
-            epoch_losses['total'] += loss_G.item()
-            epoch_losses['task_losses'][task_id].append(loss_task.item())
-            
-            writer.add_scalar(f'Train/Task_{task_id}_Loss', loss_task.item(), epoch)
-            
-            pbar.set_postfix(
-                loss=loss_G.item(),
-                task=task_id,
-                lr=optimizer.param_groups[0]['lr']
-            )
-    
-    avg_total_loss = epoch_losses['total'] / len(dataloader)
-    avg_task_losses = [np.mean(losses) if losses else 0 for losses in epoch_losses['task_losses']]
-    
-    return avg_total_loss, avg_task_losses
+    try:
+        model.train()
+        epoch_losses = {'total': 0, 'task_losses': [[] for _ in range(9)]}  # 9个任务
+        
+        pbar = tqdm(dataloader, desc=f"Epoch {epoch}")
+        for train_data_lists in pbar:
+            for task_id, data_list in enumerate(train_data_lists):
+                inp_lr, inp_gt, inp_guide = (item.type(torch.FloatTensor).cuda() for item in data_list)
+                
+                optimizer.zero_grad()
+                
+                restored = model(inp_lr, inp_guide)
+                
+                loss_task = loss_fn(restored, inp_gt)
+                loss_G = loss_task
+                
+                loss_G.backward()
+                optimizer.step()
+                
+                epoch_losses['total'] += loss_G.item()
+                epoch_losses['task_losses'][task_id].append(loss_task.item())
+                
+                writer.add_scalar(f'Train/Task_{task_id}_Loss', loss_task.item(), epoch)
+                
+                pbar.set_postfix(
+                    loss=loss_G.item(),
+                    task=task_id,
+                    lr=optimizer.param_groups[0]['lr']
+                )
+        
+        avg_total_loss = epoch_losses['total'] / len(dataloader)
+        avg_task_losses = [np.mean(losses) if losses else 0 for losses in epoch_losses['task_losses']]
+        
+        return avg_total_loss, avg_task_losses
+    finally:
+        if hasattr(dataloader, '_iterator'):
+            del dataloader._iterator
 
 def validate_one_epoch(model, datasets, test_minmax, logger, epoch, writer, save_dir, optimizer, scheduler):
     global best_psnr_pan_WV4, best_psnr_pan_QB, best_psnr_pan_GF1
@@ -88,28 +93,39 @@ def validate_one_epoch(model, datasets, test_minmax, logger, epoch, writer, save
         }
         
         for dataset_id, dataset in enumerate(datasets):
-            val_dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
-            metric_values = []
+            val_dataloader = DataLoader(
+                dataset, 
+                batch_size=1, 
+                shuffle=False,
+                num_workers=1,  # 验证时使用更少的workers
+                pin_memory=True
+            )
             
-            if dataset_id <= 2:  # depth estimation tasks
-                for index, (inp_lr, inp_gt, inp_guide) in enumerate(tqdm(val_dataloader, desc=f'Validating Depth_{4*(2**dataset_id)}')):
-                    output = model(inp_lr.cuda(), inp_guide.cuda())
-                    metric_values.append(
-                        calc_rmse(output[0,0], 
-                                inp_gt.cuda()[0,0], 
-                                torch.from_numpy(test_minmax[:, index]).cuda())
-                    )
-                avg_metric = torch.mean(torch.stack(metric_values)).item()
-                rmse.append(avg_metric)
-            
-            else:  # MRI and pansharpening tasks
-                for inp_lr, inp_gt, inp_guide in tqdm(val_dataloader, desc=f'Validating Task_{dataset_id}'):
-                    output = model(inp_lr.cuda(), inp_guide.cuda())
-                    metric_values.append(
-                        PSNR(inp_gt.numpy()[0], output.cpu().numpy()[0])
-                    )
-                avg_metric = np.mean(metric_values)
-                psnr.append(avg_metric)
+            try:
+                metric_values = []
+                if dataset_id <= 2:  # depth estimation tasks
+                    for index, (inp_lr, inp_gt, inp_guide) in enumerate(tqdm(val_dataloader, desc=f'Validating Depth_{4*(2**dataset_id)}')):
+                        output = model(inp_lr.cuda(), inp_guide.cuda())
+                        metric_values.append(
+                            calc_rmse(output[0,0], 
+                                    inp_gt.cuda()[0,0], 
+                                    torch.from_numpy(test_minmax[:, index]).cuda())
+                        )
+                    avg_metric = torch.mean(torch.stack(metric_values)).item()
+                    rmse.append(avg_metric)
+                
+                else:  # MRI and pansharpening tasks
+                    for inp_lr, inp_gt, inp_guide in tqdm(val_dataloader, desc=f'Validating Task_{dataset_id}'):
+                        output = model(inp_lr.cuda(), inp_guide.cuda())
+                        metric_values.append(
+                            PSNR(inp_gt.numpy()[0], output.cpu().numpy()[0])
+                        )
+                    avg_metric = np.mean(metric_values)
+                    psnr.append(avg_metric)
+            finally:
+                # 确保验证数据加载器被清理
+                del val_dataloader
+                torch.cuda.empty_cache()
         
         # 记录验证指标
         metrics = {
@@ -166,8 +182,10 @@ def main():
     writer = SummaryWriter(log_dir=os.path.join(save_dir, 'tensorboard_logs'))
     
     # Initialize logger
-    logger = get_logger(os.path.join(save_dir, 'run.log'))
-    logger.info(f"{'='*20} Experiment Settings {'='*20}")
+# Initialize logger
+    logger = get_logger(os.path.join(save_dir, 'run.log'), mode='a')  # 改为'a'模式进行追加
+    logger.info(f"\n{'='*20} New Training Session {'='*20}")  # 添加分隔符标识新的训练会话
+    logger.info(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")  # 记录开始时间
     logger.info(f"Experiment: {args.exp_name}")
     logger.info(f"Batch size: {args.batch_size}")
     logger.info(f"Learning rate: {args.lr}")
@@ -224,10 +242,34 @@ def main():
     lr_scheduler_G = CosineAnnealingLR(optimizer_G, args.num_epoch, eta_min=1.0e-6)
     l1_loss = L1Loss().cuda()
     
-    # Initialize best metrics
-    best_psnr_pan_WV4, best_psnr_pan_QB, best_psnr_pan_GF1 = -float('inf'), -float('inf'), -float('inf')
-    best_psnr_mri_2x, best_psnr_mri_4x, best_psnr_mri_8x = -float('inf'), -float('inf'), -float('inf')
-    best_rmse_4, best_rmse_8, best_rmse_16 = float('inf'), float('inf'), float('inf')
+    
+    # 尝试加载checkpoint
+    start_epoch = 1
+    checkpoint_path = os.path.join(save_dir, 'latest_checkpoint.pth')
+    if os.path.exists(checkpoint_path):
+        logger.info(f"Loading checkpoint from {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path)
+        Generator.load_state_dict(checkpoint['model_state_dict'])
+        optimizer_G.load_state_dict(checkpoint['optimizer_state_dict'])
+        lr_scheduler_G.load_state_dict(checkpoint['scheduler_state_dict'])
+        start_epoch = checkpoint['epoch'] + 1
+        
+        # 更新最佳指标
+        metrics = checkpoint.get('metrics', {})
+        best_rmse_4 = metrics.get('rmse_4', best_rmse_4)
+        best_rmse_8 = metrics.get('rmse_8', best_rmse_8)
+        best_rmse_16 = metrics.get('rmse_16', best_rmse_16)
+        best_psnr_mri_2x = metrics.get('psnr_mri_2x', best_psnr_mri_2x)
+        best_psnr_mri_4x = metrics.get('psnr_mri_4x', best_psnr_mri_4x)
+        best_psnr_mri_8x = metrics.get('psnr_mri_8x', best_psnr_mri_8x)
+        best_psnr_pan_WV4 = metrics.get('psnr_pan_wv4', best_psnr_pan_WV4)
+        best_psnr_pan_QB = metrics.get('psnr_pan_qb', best_psnr_pan_QB)
+        best_psnr_pan_GF1 = metrics.get('psnr_pan_gf1', best_psnr_pan_GF1)
+        
+        logger.info(f"Resuming from epoch {start_epoch}")
+        logger.info("Loaded best metrics:")
+        for name, value in metrics.items():
+            logger.info(f"{name}: {value:.4f}")
     
     # 在训练循环之前测试验证代码
     if args.validate_first:
@@ -239,40 +281,44 @@ def main():
         logger.info("Initial validation completed.")
     
     # Training loop
-    for epoch in range(1, args.num_epoch + 1):
+    for epoch in range(start_epoch, args.num_epoch + 1):
         mix_dataset.shuffle()
         train_dataloader = DataLoader(
             mix_dataset, 
             batch_size=args.batch_size,
             shuffle=True,
-            num_workers=4,
+            num_workers=1,
             pin_memory=True,
-            persistent_workers=True
+            persistent_workers=False,
+            prefetch_factor=1
         )
         
-        avg_total_loss, avg_task_losses = train_one_epoch(
-            epoch, train_dataloader, Generator, optimizer_G, l1_loss, writer
-        )
-        lr_scheduler_G.step()
-        
-        # 验证条件
-        if (epoch < 250 and epoch % 20 == 0) or (epoch > 250 and epoch % 5 == 0):
-            metrics, improved = validate_one_epoch(
-                Generator, list_val_dataset, test_minmax, logger, epoch,
-                writer, save_dir, optimizer_G, lr_scheduler_G
+        try:
+            avg_total_loss, avg_task_losses = train_one_epoch(
+                epoch, train_dataloader, Generator, optimizer_G, l1_loss, writer
             )
-            checkpoint = {
-                'epoch': epoch,
-                'model_state_dict': Generator.state_dict(),
-                'optimizer_state_dict': optimizer_G.state_dict(),
-                'scheduler_state_dict': lr_scheduler_G.state_dict(),
-                'metrics': metrics
-            }
-            torch.save(checkpoint, os.path.join(save_dir, 'latest_checkpoint.pth'))
-            if improved:
-                torch.save(checkpoint, os.path.join(save_dir, f'checkpoint_epoch_{epoch}.pth'))
-        
-        torch.cuda.empty_cache()
+            lr_scheduler_G.step()
+            
+            # 验证条件
+            if (epoch < 250 and epoch % 20 == 0) or (epoch > 250 and epoch % 5 == 0):
+                metrics, improved = validate_one_epoch(
+                    Generator, list_val_dataset, test_minmax, logger, epoch,
+                    writer, save_dir, optimizer_G, lr_scheduler_G
+                )
+                checkpoint = {
+                    'epoch': epoch,
+                    'model_state_dict': Generator.state_dict(),
+                    'optimizer_state_dict': optimizer_G.state_dict(),
+                    'scheduler_state_dict': lr_scheduler_G.state_dict(),
+                    'metrics': metrics
+                }
+                torch.save(checkpoint, os.path.join(save_dir, 'latest_checkpoint.pth'))
+                if improved:
+                    torch.save(checkpoint, os.path.join(save_dir, f'checkpoint_epoch_{epoch}.pth'))
+        finally:
+            del train_dataloader
+            torch.cuda.empty_cache()
+    
     writer.close()
     
 if __name__ == '__main__':

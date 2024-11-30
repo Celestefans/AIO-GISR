@@ -122,7 +122,7 @@ if __name__== "__main__":
     # gt1,gt2,gt3 = torch.rand(4,1,256,256),torch.rand(4,1,240,240),torch.rand(4,4,128,128)
     # gi1,gi2,gi3 = torch.rand(4,3,256,256),torch.rand(4,1,240,240),torch.rand(4,1,128,128)
 
-    model = Restormer(inp_channels=9, out_channels=8, dim = 24, num_blocks=[3, 4, 4, 6])
+    model = Restormer(inp_channels=9, out_channels=8, dim = 22, num_blocks=[3, 4, 4, 6])
     # model = Restormer(inp_channels=9, out_channels=8, dim = 16, num_blocks=[2, 3, 3, 5])
     # gen1 = model(lr1,gi1)
     # gen2 = model(lr2,gi2)

@@ -193,22 +193,7 @@ class MoE(nn.Module):
         return (gates > 0).sum(0)
 
     def _prob_in_top_k(self, clean_values, noisy_values, noise_stddev, noisy_top_values):
-        """Helper function to NoisyTopKGating.
-        Computes the probability that value is in top k, given different random noise.
-        This gives us a way of backpropagating from a loss that balances the number
-        of times each expert is in the top k experts per example.
-        In the case of no noise, pass in None for noise_stddev, and the result will
-        not be differentiable.
-        Args:
-        clean_values: a `Tensor` of shape [batch, n].
-        noisy_values: a `Tensor` of shape [batch, n].  Equal to clean values plus
-          normally distributed noise with standard deviation noise_stddev.
-        noise_stddev: a `Tensor` of shape [batch, n], or None
-        noisy_top_values: a `Tensor` of shape [batch, m].
-           "values" Output of tf.top_k(noisy_top_values, m).  m >= k+1
-        Returns:
-        a `Tensor` of shape [batch, n].
-        """
+        """Helper function to NoisyTopKGating."""
         batch = clean_values.size(0)
         m = noisy_top_values.size(1)
         top_values_flat = noisy_top_values.flatten()
@@ -218,28 +203,50 @@ class MoE(nn.Module):
         is_in = torch.gt(noisy_values, threshold_if_in)
         threshold_positions_if_out = threshold_positions_if_in - 1
         threshold_if_out = torch.unsqueeze(torch.gather(top_values_flat, 0, threshold_positions_if_out), 1)
-        # is each value currently in the top k.
+        
+        # 确保所有tensor的形状一致
         normal = Normal(self.mean, self.std)
-        prob_if_in = normal.cdf((clean_values - threshold_if_in)/noise_stddev)
-        prob_if_out = normal.cdf((clean_values - threshold_if_out)/noise_stddev)
+        
+        # 扩展noise_stddev到与clean_values相同的形状
+        noise_stddev = noise_stddev.expand_as(clean_values)
+        
+        # 计算概率时添加数值稳定性
+        valid_mask = noise_stddev > 0
+        
+        # 初始化概率tensor
+        prob_if_in = torch.zeros_like(clean_values)
+        prob_if_out = torch.zeros_like(clean_values)
+        
+        if valid_mask.any():
+            # 确保所有参与计算的tensor形状一致
+            clean_valid = clean_values[valid_mask]
+            threshold_in_valid = threshold_if_in.expand_as(clean_values)[valid_mask]
+            threshold_out_valid = threshold_if_out.expand_as(clean_values)[valid_mask]
+            noise_valid = noise_stddev[valid_mask]
+            
+            prob_if_in[valid_mask] = normal.cdf(
+                (clean_valid - threshold_in_valid) / noise_valid
+            )
+            prob_if_out[valid_mask] = normal.cdf(
+                (clean_valid - threshold_out_valid) / noise_valid
+            )
+        
         prob = torch.where(is_in, prob_if_in, prob_if_out)
         return prob
 
     def noisy_top_k_gating(self, x, train, noise_epsilon=1e-2):
         """Noisy top-k gating.
-          See paper: https://arxiv.org/abs/1701.06538.
-          Args:
-            x: input Tensor with shape [batch_size, input_size]
-            train: a boolean - we only add noise at training time.
-            noise_epsilon: a float
-          Returns:
-            gates: a Tensor with shape [batch_size, num_experts]
-            load: a Tensor with shape [num_experts]
+        See paper: https://arxiv.org/abs/1701.06538.
         """
         clean_logits = x @ self.w_gate
         if self.noisy_gating and train:
             raw_noise_stddev = x @ self.w_noise
-            noise_stddev = ((self.softplus(raw_noise_stddev) + noise_epsilon))
+            # 添加clip操作防止数值不稳定
+            noise_stddev = torch.clamp(
+                self.softplus(raw_noise_stddev) + noise_epsilon,
+                min=1e-7,
+                max=1.0
+            )
             noisy_logits = clean_logits + (torch.randn_like(clean_logits) * noise_stddev)
             logits = noisy_logits
         else:
@@ -255,7 +262,13 @@ class MoE(nn.Module):
         gates = zeros.scatter(1, top_k_indices, top_k_gates)
 
         if self.noisy_gating and self.k < self.num_experts and train:
-            load = (self._prob_in_top_k(clean_logits, noisy_logits, noise_stddev, top_logits)).sum(0)
+            # 添加数值稳定性检查
+            load = self._prob_in_top_k(
+                clean_logits, 
+                noisy_logits, 
+                noise_stddev.clamp(min=1e-7), # 确保除数不为0
+                top_logits
+            ).sum(0)
         else:
             load = self._gates_to_load(gates)
         return gates, load
