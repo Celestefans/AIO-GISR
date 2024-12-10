@@ -18,12 +18,12 @@ import numpy as np
 import argparse
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Training 9 Tasks with CLIP')
-    parser.add_argument('--exp_name', type=str, default='MOE_Clip_AIO_GISR_9tasks_promptnum32', help='experiment name')
+    parser = argparse.ArgumentParser(description='Training 6 Tasks with CLIP')
+    parser.add_argument('--exp_name', type=str, default='MOE_Clip_AIO_GISR_6tasks', help='experiment name')
     parser.add_argument('--batch_size', type=int, default=4, help='batch size')
     parser.add_argument('--num_epoch', type=int, default=500, help='number of epochs')
     parser.add_argument('--lr', type=float, default=4e-4, help='learning rate')
-    parser.add_argument('--gpu', type=str, default='7', help='GPU ID')
+    parser.add_argument('--gpu', type=str, default='4', help='GPU ID')
     parser.add_argument('--depth_root', type=str, default='/data/cjj/dataset/NYU_V2', help='depth dataset root')
     parser.add_argument('--mri_root', type=str, default='/data/wtt/MRI_align/BT', help='MRI dataset root')
     parser.add_argument('--pan_root', type=str, default='/data/datasets/pansharpening/NBU_dataset0730', help='pansharpening dataset root')
@@ -34,7 +34,7 @@ def parse_args():
 def train_one_epoch(epoch, dataloader, model, optimizer, loss_fn, clip_feat, writer):
     try:
         model.train()
-        epoch_losses = {'total': 0, 'task_losses': [[] for _ in range(9)]}
+        epoch_losses = {'total': 0, 'task_losses': [[] for _ in range(6)]}
         
         pbar = tqdm(dataloader, desc=f"Epoch {epoch}")
         for train_data_lists in pbar:
@@ -73,9 +73,9 @@ def train_one_epoch(epoch, dataloader, model, optimizer, loss_fn, clip_feat, wri
             del dataloader._iterator
 
 def validate_one_epoch(model, datasets, test_minmax, logger, epoch, clip_feat, writer, save_dir, optimizer, scheduler):
-    global best_psnr_pan_WV4, best_psnr_pan_QB, best_psnr_pan_GF1
-    global best_psnr_mri_2x, best_psnr_mri_4x, best_psnr_mri_8x
-    global best_rmse_4, best_rmse_8, best_rmse_16
+    global best_psnr_pan_WV4, best_psnr_pan_QB
+    global best_psnr_mri_2x, best_psnr_mri_4x
+    global best_rmse_4, best_rmse_8
     
     model.eval()
     with torch.no_grad():
@@ -85,20 +85,17 @@ def validate_one_epoch(model, datasets, test_minmax, logger, epoch, clip_feat, w
         best_metrics = {
             'rmse_4': best_rmse_4,
             'rmse_8': best_rmse_8,
-            'rmse_16': best_rmse_16,
             'psnr_mri_2x': best_psnr_mri_2x,
             'psnr_mri_4x': best_psnr_mri_4x,
-            'psnr_mri_8x': best_psnr_mri_8x,
             'psnr_pan_wv4': best_psnr_pan_WV4,
-            'psnr_pan_qb': best_psnr_pan_QB,
-            'psnr_pan_gf1': best_psnr_pan_GF1
+            'psnr_pan_qb': best_psnr_pan_QB
         }
         
         for dataset_id, dataset in enumerate(datasets):
             val_dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
             metric_values = []
             inp_clip = clip_feat[dataset_id]
-            if dataset_id <= 2:  # depth estimation tasks
+            if dataset_id < 2:  # depth estimation tasks
                 for index, (inp_lr, inp_gt, inp_guide) in enumerate(tqdm(val_dataloader, desc=f'Validating Depth_{4*(2**dataset_id)}')):
                     output = model(inp_lr.cuda(), inp_guide.cuda(), inp_clip)[0]
                     metric_values.append(
@@ -122,13 +119,10 @@ def validate_one_epoch(model, datasets, test_minmax, logger, epoch, clip_feat, w
         metrics = {
             'rmse_4': rmse[0],
             'rmse_8': rmse[1],
-            'rmse_16': rmse[2],
             'psnr_mri_2x': psnr[0],
             'psnr_mri_4x': psnr[1],
-            'psnr_mri_8x': psnr[2],
-            'psnr_pan_wv4': psnr[3],
-            'psnr_pan_qb': psnr[4],
-            'psnr_pan_gf1': psnr[5]
+            'psnr_pan_wv4': psnr[2],
+            'psnr_pan_qb': psnr[3]
         }
         
         # 记录到tensorboard
@@ -184,14 +178,14 @@ def main():
     logger.info(f"{'='*60}")
     
     # 在这里定义全局变量
-    global best_psnr_pan_WV4, best_psnr_pan_QB, best_psnr_pan_GF1
-    global best_psnr_mri_2x, best_psnr_mri_4x, best_psnr_mri_8x
-    global best_rmse_4, best_rmse_8, best_rmse_16
+    global best_psnr_pan_WV4, best_psnr_pan_QB
+    global best_psnr_mri_2x, best_psnr_mri_4x
+    global best_rmse_4, best_rmse_8
     
     # Initialize best metrics
-    best_psnr_pan_WV4, best_psnr_pan_QB, best_psnr_pan_GF1 = -float('inf'), -float('inf'), -float('inf')
-    best_psnr_mri_2x, best_psnr_mri_4x, best_psnr_mri_8x = -float('inf'), -float('inf'), -float('inf')
-    best_rmse_4, best_rmse_8, best_rmse_16 = float('inf'), float('inf'), float('inf')
+    best_psnr_pan_WV4, best_psnr_pan_QB = -float('inf'), -float('inf')
+    best_psnr_mri_2x, best_psnr_mri_4x = -float('inf'), -float('inf')
+    best_rmse_4, best_rmse_8 = float('inf'), float('inf')
     
     # Initialize datasets
     data_transform = transforms.Compose([transforms.ToTensor()])
@@ -199,33 +193,27 @@ def main():
     # Training datasets
     depth_dataset_4 = NYU_v2_datset(root_dir=args.depth_root, scale=4, transform=data_transform, train=True)
     depth_dataset_8 = NYU_v2_datset(root_dir=args.depth_root, scale=8, transform=data_transform, train=True)
-    depth_dataset_16 = NYU_v2_datset(root_dir=args.depth_root, scale=16, transform=data_transform, train=True)
     mri_dataset_2 = MRI_pre_dataset(os.path.join(args.mri_root, 'x2_t2_train'), os.path.join(args.mri_root, 'T2_train'), os.path.join(args.mri_root, 'T1_train'))
     mri_dataset_4 = MRI_pre_dataset(os.path.join(args.mri_root, 'x4_t2_train'), os.path.join(args.mri_root, 'T2_train'), os.path.join(args.mri_root, 'T1_train'))
-    mri_dataset_8 = MRI_pre_dataset(os.path.join(args.mri_root, 'x8_t2_train'), os.path.join(args.mri_root, 'T2_train'), os.path.join(args.mri_root, 'T1_train'))
     pan_dataset_WV4 = Pansharpening_mat_Dataset(os.path.join(args.pan_root, 'WV4', 'train'))
     pan_dataset_QB = Pansharpening_mat_Dataset(os.path.join(args.pan_root, 'QB', 'train'))
-    pan_dataset_GF1 = Pansharpening_mat_Dataset(os.path.join(args.pan_root, 'GF1', 'train'))
     
-    mix_dataset = MultiTaskDataset(depth_dataset_4, depth_dataset_8, depth_dataset_16, 
-                                  mri_dataset_2, mri_dataset_4, mri_dataset_8,
-                                  pan_dataset_WV4, pan_dataset_QB, pan_dataset_GF1)
+    mix_dataset = MultiTaskDataset(depth_dataset_4, depth_dataset_8,
+                                  mri_dataset_2, mri_dataset_4,
+                                  pan_dataset_WV4, pan_dataset_QB)
     
     # Validation datasets
     test_minmax = np.load(f'{args.depth_root}/test_minmax.npy')
     val_depth_dataset_4 = NYU_v2_datset(root_dir=args.depth_root, scale=4, transform=data_transform, train=False)
     val_depth_dataset_8 = NYU_v2_datset(root_dir=args.depth_root, scale=8, transform=data_transform, train=False)
-    val_depth_dataset_16 = NYU_v2_datset(root_dir=args.depth_root, scale=16, transform=data_transform, train=False)
     val_mri_dataset_2 = MRI_pre_dataset(os.path.join(args.mri_root, 'x2_t2_test'), os.path.join(args.mri_root, 'T2_test'), os.path.join(args.mri_root, 'T1_test'))
     val_mri_dataset_4 = MRI_pre_dataset(os.path.join(args.mri_root, 'x4_t2_test'), os.path.join(args.mri_root, 'T2_test'), os.path.join(args.mri_root, 'T1_test'))
-    val_mri_dataset_8 = MRI_pre_dataset(os.path.join(args.mri_root, 'x8_t2_test'), os.path.join(args.mri_root, 'T2_test'), os.path.join(args.mri_root, 'T1_test'))
     val_pan_dataset_WV4 = Pansharpening_mat_Dataset(os.path.join(args.pan_root,'WV4', 'test'))
     val_pan_dataset_QB = Pansharpening_mat_Dataset(os.path.join(args.pan_root,'QB', 'test'))
-    val_pan_dataset_GF1 = Pansharpening_mat_Dataset(os.path.join(args.pan_root,'GF1', 'test'))
     
-    list_val_dataset = [val_depth_dataset_4, val_depth_dataset_8, val_depth_dataset_16, 
-                        val_mri_dataset_2, val_mri_dataset_4, val_mri_dataset_8,
-                        val_pan_dataset_WV4, val_pan_dataset_QB, val_pan_dataset_GF1]
+    list_val_dataset = [val_depth_dataset_4, val_depth_dataset_8,
+                        val_mri_dataset_2, val_mri_dataset_4,
+                        val_pan_dataset_WV4, val_pan_dataset_QB]
     
     # Initialize model, optimizer, scheduler and loss
     Generator = MOE_IFM_Clip(dim=22, num_blocks=[3, 4, 4, 5], prompt_num=32).cuda()
@@ -250,13 +238,10 @@ def main():
         
         best_rmse_4 = metrics.get('rmse_4', float('inf'))
         best_rmse_8 = metrics.get('rmse_8', float('inf'))
-        best_rmse_16 = metrics.get('rmse_16', float('inf'))
         best_psnr_mri_2x = metrics.get('psnr_mri_2x', -float('inf'))
         best_psnr_mri_4x = metrics.get('psnr_mri_4x', -float('inf'))
-        best_psnr_mri_8x = metrics.get('psnr_mri_8x', -float('inf'))
         best_psnr_pan_WV4 = metrics.get('psnr_pan_wv4', -float('inf'))
         best_psnr_pan_QB = metrics.get('psnr_pan_qb', -float('inf'))
-        best_psnr_pan_GF1 = metrics.get('psnr_pan_gf1', -float('inf'))
         
         logger.info(f"Resuming from epoch {start_epoch}")
         logger.info("Loaded best metrics:")

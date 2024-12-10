@@ -525,7 +525,7 @@ class PromptIR_multitasks(nn.Module):
         return out_dec_level1
 if __name__ == "__main__":
 
-    device = torch.device('cuda:5')
+    device = torch.device('cuda:3')
 
     depth_1, depth_2 = torch.rand(1, 1, 64, 64), torch.rand(1, 3, 256, 256)
     mri_1, mri_2 = torch.rand(1, 1, 60, 60), torch.rand(1, 1, 240, 240)

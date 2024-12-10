@@ -689,8 +689,9 @@ class MOE_IFM_Clip(nn.Module):
         heads = [1,2,4,8],
         ffn_expansion_factor = 2.66,
         bias = False,
+        prompt_num = 16,
         LayerNorm_type = 'WithBias',   ## Other option 'BiasFree'
-        dual_pixel_task = False        ## True for dual-pixel defocus deblurring only. Also set inp_channels=6
+        dual_pixel_task = False,       ## True for dual-pixel defocus deblurring only. Also set inp_channels=6
     ):
 
         super(MOE_IFM_Clip, self).__init__()
@@ -700,7 +701,7 @@ class MOE_IFM_Clip(nn.Module):
         # atom_dim = 256 
         # atom_num = 32 
         atom_dim = 128
-        atom_num = 16 
+        atom_num = prompt_num
         # self.dict_generator1 = RIN_Clip(in_dim=4, atom_num=atom_num, atom_dim=atom_dim) # depth
         # self.dict_generator2 = RIN_Clip(in_dim=2, atom_num=atom_num, atom_dim=atom_dim) # mri
         # self.dict_generator3 = RIN_Clip(in_dim=5, atom_num=atom_num, atom_dim=atom_dim) # pan
@@ -863,7 +864,7 @@ if __name__ == '__main__':
     mri_1, mri_2 = mri_1.type(torch.FloatTensor).cuda(), mri_2.type(torch.FloatTensor).cuda()
     pan_1, pan_2 = pan_1.type(torch.FloatTensor).cuda(), pan_2.type(torch.FloatTensor).cuda()
     
-    model = MOE_IFM_Clip(dim=22, num_blocks=[3, 4, 4, 5])
+    model = MOE_IFM_Clip(dim=22, num_blocks=[3, 4, 4, 5], prompt_num=32)
     # model.cuda()
     # model.eval()
 
